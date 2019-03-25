@@ -1,0 +1,1415 @@
+---
+title: "Best Buy Case Study"
+author: "Shilpa, Xinran, Pratik, Harsha"
+output:
+  word_document: default
+  pdf_document: default
+---
+#==========================================================
+## SET UP R MARKDOWN
+#==========================================================
+```{r}
+rm(list = ls())
+
+setwd("/Users/shilpu/Documents/BOPS/BOPS/")
+# install packages
+#install.packages("readstata13")
+#install.packages("ggeffects")
+#install.packages("QuantPsyc")
+#install.packages("VIF")
+#install.packages("usdm")
+#install.packages("lmtest")
+#install.packages("multiwayvcov")
+#install.packages("sandwich")
+#install.packages("AER")
+#install.packages("aod")
+#install.packages("mfx")
+
+# Load libraries everytime you start a session
+library("readstata13")
+library(stargazer)
+library(gdata)
+library(ggplot2)
+#library(psych) 
+library(ggeffects)
+library(QuantPsyc)
+library(usdm)
+library(lmtest)
+library(multiwayvcov)
+library(sandwich)
+library(foreign)
+library(AER)
+library(aod)
+library(Rcpp)
+library(mfx)
+library(nnet)
+library(reshape2)
+
+
+# turn off scientific notation except for big numbers. 
+options(scipen = 9)
+```
+#==========================================================
+##  LOAD AND EXPLORE DATA Q1 and Q2
+#==========================================================
+```{r}
+mydata = read.dta13("online daily sales-returns data.dta")
+
+# Summary statistics
+stargazer(mydata, type="text", median=TRUE, iqr=TRUE,digits=1, title="Descriptive Statistics")  
+
+mydata$avg_female[is.na(mydata$avg_female)] <- mean(mydata$avg_female,na.rm=TRUE)
+mydata$avg_age[is.na(mydata$avg_age)] <- mean(mydata$avg_age,na.rm=TRUE)
+mydata$avg_income[is.na(mydata$avg_income)] <- mean(mydata$avg_income,na.rm=TRUE)
+mydata$avg_homeowner[is.na(mydata$avg_homeowner)] <- mean(mydata$avg_homeowner,na.rm=TRUE)
+mydata$avg_residency[is.na(mydata$avg_residency)] <- mean(mydata$avg_residency,na.rm=TRUE)
+mydata$avg_childowner[is.na(mydata$avg_childowner)] <- mean(mydata$avg_childowner,na.rm=TRUE)
+
+stargazer(mydata, type="text", median=TRUE, iqr=TRUE,digits=1, title="Descriptive Statistics") #All rows have been treated for missing values, same number of observatios obtained. 
+
+hist(mydata$salesvalue)
+hist(log(mydata$salesvalue)) #log of salesvalue is more normally distributed compared to salesvalue
+
+hist(mydata$salesquantity) 
+hist(log(mydata$salesquantity)) # log of salesquantity is more normally distributed 
+
+hist(mydata$returnvalue) 
+hist(log(mydata$returnvalue)) # log of returnvalue is more normally distributed
+
+hist(mydata$returnquantity) 
+hist(log(mydata$returnquantity)) #log of returnquantity is more normally distributed
+
+```
+
+#==========================================================
+##CREATING TIME FRAME AND GROUPING VARIABLES
+#==========================================================
+```{r}
+stores <- subset(mydata, mydata$day < 788)
+stores$TimeDummy<- ifelse(stores$day < 366,0,1)
+stores$StoreDummy <- ifelse(stores$store_number == 5998 ,0,1)
+stores$logsalesvalue <- log(stores$salesvalue+1)
+stores$logreturnvalue <- log(stores$returnvalue+1)
+
+## Detecting Multicollinearity
+df1=data.frame(stores$TimeDummy,stores$StoreDummy,stores$year, stores$month_dummy, stores$avg_female, stores$avg_age, stores$avg_income, stores$avg_homeowner, stores$avg_residency, stores$avg_childowner)
+
+cor(df1) #no collinearity >0.8
+vifcor(df1)  ## VIF for year,TimeDummy > 3
+
+df1.2=data.frame(stores$TimeDummy,stores$StoreDummy, stores$month_dummy, stores$avg_female, stores$avg_age, stores$avg_income, stores$avg_homeowner, stores$avg_residency, stores$avg_childowner) #Eliminating the year variable
+
+cor(df1.2) #no collinearity >0.8
+vifcor(df1.2)  ## no VIF score > 3
+
+```
+
+#==========================================================
+## Q1 MODEL DEVELOPMENT FOR STORE SALES VALUE - OLS
+#==========================================================
+
+```{r}
+
+#Interaction between TimeDummy and StoreDummy 
+res = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner,data=stores)
+
+gqtest(res) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(res) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(res, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(res,  
+          se=list(HWrobstder),
+          title="Q1 Regression Results", type="text", 
+          column.labels=c("HW-Robust SE"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  # displays normal/HW robust  standard errors. 
+
+meffects <- ggpredict(res, terms=c("TimeDummy", "StoreDummy")) # generates a tidy data frame  
+ggplot(meffects,aes(x, predicted, colour=group)) + geom_line(size=1.3) + 
+    xlab("TimeDummy") + ylab("LogSalesValue") +
+    labs(colour="Stores") + 
+    scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6")) + ggtitle("Store Level Sales Value")
+
+#Finding for store 2 AND store 6 separately
+dfset1<- subset(stores, store_number==2 | store_number==5998)
+dfset2<- subset(stores, store_number==6 | store_number==5998)
+
+ModelA = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset1)
+
+ModelB = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset2)
+
+stargazer(ModelA, ModelB,
+          title="Q1 Regression Results", type="text", 
+          column.labels=c("Store 2 vs Store 5998", "Store 6 vs Store 5998"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))  
+
+```
+
+#==========================================================
+## For store number 2 and 6, BOPS implementation is associated with 49% decrease in online sales value  
+## For store number 2, BOPS implementation is associated with 44% decrease in online sales value  
+## For store number 6, BOPS implementation is associated with 53% decrease in online sales value
+#==========================================================
+
+#==========================================================
+## Q1 MODEL DEVELOPMENT FOR STORE SALES QUANTITY - POISSON
+#==========================================================
+
+```{r}
+poisson1 <- glm(salesquantity~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner, family="poisson", data=stores)
+
+stargazer(poisson1,  
+          title="Q1 Sales Quantity Poisson Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+## Model fit assessment 
+poisson1a <- glm(salesquantity~1, data=stores, family="poisson") 
+lrtest(poisson1, poisson1a) # MODEL DOES NOT FIT THE DATA SINCE THE RESULT IS SIGNIFICANT
+```
+
+#==========================================================
+## Q1 MODEL DEVELOPMENT FOR STORE SALES QUANTITY - NEGATIVE BINOMIAL
+#==========================================================
+
+```{r}
+negbin1 <- glm.nb(salesquantity~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner, data = stores) 
+
+stargazer(negbin1,  
+          title="Q1 Sales Quantity Neg Binomial Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))# The interaction term has coefficient of -0.41, which is statistically significant. This means that implementing BOPS is associated with 41% decrease in the expected log count of sales quantity of store number 2 and 6.
+
+# Model fit assessment
+negbin1a <- glm.nb(salesquantity ~ 1, data = stores) 
+lrtest(negbin1, negbin1a) # # Model fits the data because LR test statistic is  significant.
+
+# Choosing between Poisson and Negative Binomial regressions
+lrtest(poisson1, negbin1) # The significant p-value indicates that the poisson model, which holds the dispersion parameter at constant, is less appropriate than negative binomial.
+
+# Check for heteroscedasticity
+gqtest(negbin1) # Goldfeld-Quandt test does not indicate heteroscedasticity
+bptest(negbin1) # Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(negbin1, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(negbin1,  
+          apply.coef = exp, t.auto=F, p.auto = F,
+          se=list(HWrobstder),
+          title="Q1 Sales Quantity Neg Binomial IRR Results", type="text", 
+          column.labels=c("HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))  #The output indicates that the incident rate for TimeDummy:StoreDummy is 0.6669**. For stores 2 and 6, BOPS Implementation is associated with a 33% decrease in sales quantity.
+
+# Visualize the output
+meffects <- ggpredict(negbin1, terms=c("TimeDummy","StoreDummy")) 
+ggplot(meffects,aes(x, predicted, colour=group)) + geom_line(size=1.3) +
+   xlab("TimeDummy") + ylab("Sales quantity") +
+    labs(colour="Stores") + scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6")) + ggtitle("Store Level Sales Quantity")
+
+```
+
+#==========================================================
+## For stores 2 and 6, BOPS Implementation is associated with a 33% decrease in sales quantity. 
+#==========================================================
+
+#==========================================================
+## Q2 MODEL DEVELOPMENT FOR STORE RETURN VALUE - OLS
+#==========================================================
+
+```{r}
+
+#Interaction between TimeDummy and StoreDummy 
+res2 = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=stores)
+
+gqtest(res2) # Significant Goldfeld-Quandt test indicates heteroscedasticity 
+bptest(res2) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(res2, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(res2,  
+          se=list(HWrobstder),
+          title="Q2 Regression Results", type="text", 
+          column.labels=c("HW-Robust SE"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  # displays normal/HW robust  standard errors. Interaction is significant(-0.664***). For store number 2 and 6, BOPS implementation is associated with 66.4% decrease in return value
+
+meffects2 <- ggpredict(res2, terms=c("TimeDummy", "StoreDummy")) # generates a tidy data frame  
+ggplot(meffects2,aes(x, predicted, colour=group)) + geom_line(size=1.3) + 
+    xlab("TimeDummy") + ylab("LogReturnvalue") +
+    labs(colour="Stores") + 
+    scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6"))+ ggtitle("Store Level Return Value")
+
+```
+
+#==========================================================
+## For store number 2 and 6, BOPS implementation is associated with 66.4% decrease in return value
+#==========================================================
+
+#==========================================================
+## Q2 MODEL DEVELOPMENT FOR STORE RETURN QUANTITY - POISSON
+#==========================================================
+
+```{r}
+
+poisson2 <- glm(returnquantity~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner+salesquantity, family="poisson", data=stores)
+
+stargazer(poisson2,  
+          title="Q2 Return Quantity Poisson Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+## Model fit assessment 
+poisson2a <- glm(returnquantity~1, data=stores, family="poisson") 
+lrtest(poisson2, poisson2a) #MODEL DOES NOT FIT THE DATA SINCE THE P_VALUE IS SIGNIFICANT
+
+```
+
+#==========================================================
+## Q2 MODEL DEVELOPMENT FOR STORE RETURN QUANTITY - NEGATIVE BINOMIAL
+#==========================================================
+
+```{r}
+negbin2 <- glm.nb(returnquantity~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner+salesquantity, data = stores) 
+
+stargazer(negbin2,  
+          title="Q2 Return Quantity Neg.Bin Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) # The interaction term has coefficient of -0.53**, which is statistically significant. This means that implementing BOPS is associated with 53% decrease in the expected log count of sales quantity  
+
+# Model fit assessment
+negbin2a <- glm.nb(returnquantity ~ 1, data = stores) 
+lrtest(negbin2, negbin2a) # # Model fits the data because LR test statistics is  significant.
+
+# Choosing between Poisson and Negative Binomial regressions
+lrtest(poisson2, negbin2) # The significant p-value indicates that the negative binomial model is more appropriate than the poisson model.  
+
+# Check for heteroscedasticity
+gqtest(negbin2) # Goldfeld-Quandt test does not indicate heteroscedasticity
+bptest(negbin2) # Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(negbin2, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(negbin2,  
+          apply.coef = exp, t.auto=F, p.auto = F,
+          se=list(HWrobstder),
+          title="Q2 Return Quantity Neg.Bin Results", type="text", 
+          column.labels=c("HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) #The output indicates that the incident rate for TimeDummy:StoreDummy is  0.59***. For store number 2 and 6, BOPS implementation is associated with 41% decrease in return quantity 
+
+# Visualize the output
+meffects2 <- ggpredict(negbin2, terms=c("TimeDummy","StoreDummy")) # generates a tidy data frame at three different values of competence  
+ggplot(meffects2,aes(x, predicted, colour=group)) + geom_line(size=1.3) +
+   xlab("TimeDummy") + ylab("Return quantity") +
+    labs(colour="Stores") + scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6")) + ggtitle("Store Level Sales Quantity")
+
+
+```
+#==========================================================
+## For store number 2 and 6, BOPS implementation is associated with 41% decrease in return quantity 
+#==========================================================
+
+#==========================================================
+##  LOAD AND EXPLORE DATA Q3
+#==========================================================
+```{r}
+consumers = read.dta13("consumer level data.dta")
+consumers$logsalesvalue <- log(consumers$salesvalue+1)
+
+# Summary statistics
+stargazer(consumers, type="text", median=TRUE, iqr=TRUE,digits=1, title="Descriptive Statistics")
+
+consumers$age_band[is.na(consumers$age_band)] <- median(consumers$age_band,na.rm=TRUE)
+consumers$est_income_code[is.na(consumers$est_income_code)] <- median(consumers$est_income_code,na.rm=TRUE)
+consumers$length_of_residence[is.na(consumers$length_of_residence)] <- median(consumers$length_of_residence,na.rm=TRUE)
+
+consumers$homeowner_code_dummy[consumers$homeowner_code == "O"]  <- 1  
+consumers$homeowner_code_dummy[consumers$homeowner_code == "R"]  <- 0
+
+consumers$child_dummy[consumers$child == "Y"]  <- 1  
+consumers$child_dummy[consumers$child == "N"]  <- 0
+
+stargazer(consumers, type="text", median=TRUE, iqr=TRUE,digits=1, title="Descriptive Statistics")
+
+## Detecting Multicollinearity
+df3=data.frame(consumers$store_number,consumers$age_band,consumers$est_income_code,consumers$length_of_residence,consumers$bops_in_effect,consumers$salesquantity,consumers$bops_user,consumers$homeowner_code_dummy,consumers$child_dummy)
+
+cor(df3,use="pairwise.complete.obs") #no collinearity >0.8
+vifcor(df3) #no multicollinearity
+
+```
+
+#==========================================================
+## Q3 MODEL DEVELOPMENT FOR CONSUMER SALES VALUE - OLS
+#==========================================================
+
+```{r}
+
+#Interaction between bops_in_effect and bops_user (not considering female since 15% of female values are missing)
+res3 = lm(logsalesvalue~bops_in_effect+bops_user+bops_in_effect*bops_user+factor(store_number)+age_band+est_income_code+homeowner_code_dummy+child_dummy+purchase_time_period,data=consumers)
+
+gqtest(res3) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(res3) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(res3, type="HC1"))) # produces Huber-White robust standard errors 
+stargazer(res3, 
+          se=list(HWrobstder),
+          title="Consumer Sales Value Results without considering female", type="text", 
+          column.labels=c("HW-Robust SE"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001)) #Implementing BOPS service is associated with 4.4% decrease in sales value of customer.
+
+meffects3 <- ggpredict(res3, terms=c("bops_in_effect", "bops_user")) # generates a tidy data frame  
+ggplot(meffects3,aes(x, predicted, colour=group)) + geom_line(size=1.3) + 
+    xlab("bops_in_effect") + ylab("LogSalesValue") +
+    labs(colour="bops_user") + 
+    scale_colour_discrete(labels=c("0", "1"))+ ggtitle("Consumer Level Sales Value")
+
+
+#Interaction between TimeDummy and StoreDummy (considering female)
+res3b = lm(logsalesvalue~bops_in_effect+bops_user+bops_in_effect*bops_user+factor(store_number)+age_band+est_income_code+homeowner_code_dummy+child_dummy+purchase_time_period+female,data=consumers)
+
+gqtest(res3b) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(res3b) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(res3b, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(res3b, 
+          se=list(HWrobstder),
+          title="Consumer Sales Value Regression Results", type="text", 
+          column.labels=c("HW-Robust SE"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001)) #The interaction term is insignificant if female is added to the model.
+
+```
+
+#==========================================================
+## Implementing BOPS service is associated with 4.4% decrease in sales value of customer. (without considering the variable female.)
+
+## Interaction term insignificant if female included as control variable in model.
+
+#==========================================================
+
+#==========================================================
+## Q3 MODEL DEVELOPMENT FOR CONSUMER SALES QUANTITY - POISSON
+#==========================================================
+
+```{r}
+##Interaction between bops_in_effect and bops_user (not considering female since 15% of female values are missing)
+poisson3 <- glm(salesquantity~bops_in_effect+bops_user+bops_in_effect*bops_user+factor(store_number)+age_band+est_income_code+homeowner_code_dummy+child_dummy+purchase_time_period, family="poisson", data=consumers)
+
+
+stargazer(poisson3,  
+          title="Q3 Consumer Sales Quantity Poisson Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+## Model fit assessment 
+poisson3a <- glm(salesquantity~1, data=consumers, family="poisson") 
+poisson3temp <- glm(salesquantity~bops_in_effect+bops_user+bops_in_effect*bops_user+factor(store_number)+age_band+est_income_code, family="poisson", data=consumers) #eliminating the variables homeowner_code_dummy,child_dummy since they contain some NA values to compare with null model since null model does not contain NA values.
+lrtest(poisson3temp,poisson3a) # MODEL DOES NOT FIT THE DATA SINCE THE RESULT IS SIGNIFICANT
+
+#Interaction between bops_in_effect and bops_user (considering female)
+poisson3b <- glm(salesquantity~bops_in_effect+bops_user+bops_in_effect*bops_user+factor(store_number)+age_band+est_income_code+homeowner_code_dummy+child_dummy+purchase_time_period+female, family="poisson", data=consumers)
+
+
+stargazer(poisson3b,  
+          title="Q3 Consumer Sales Quantity Poisson Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+## Model fit assessment 
+poisson3ba <- glm(salesquantity~1, data=consumers, family="poisson") 
+poisson3btemp <- glm(salesquantity~bops_in_effect+bops_user+bops_in_effect*bops_user+factor(store_number)+age_band+est_income_code, family="poisson", data=consumers) #eliminating the variables homeowner_code_dummy,child_dummy since they contain some NA values to compare with null model since null model does not contain NA values.
+lrtest(poisson3btemp,poisson3ba) # MODEL DOES NOT FIT THE DATA SINCE THE RESULT IS SIGNIFICANT
+
+```
+
+#==========================================================
+## Q3 MODEL DEVELOPMENT FOR CONSUMER SALES QUANTITY - NEGATIVE BINOMIAL
+#==========================================================
+
+```{r}
+
+#Interaction between bops_in_effect and bops_user (not considering female since 15% of female values are missing)
+negbin3 <- glm.nb(salesquantity~bops_in_effect+bops_user+bops_in_effect*bops_user+factor(store_number)+age_band+est_income_code+homeowner_code_dummy+child_dummy+purchase_time_period, data = consumers) 
+
+stargazer(negbin3,  
+          title="Q3 Consumer Sales Quantity Poisson Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) #The interaction term has coefficient of -.04***, which is statistically significant. This means that implementing BOPS is associated with 4% decrease in the expected log count of sales quantity of consumer.
+
+
+# Model fit assessment
+negbin3a <- glm.nb(salesquantity ~ 1, data = consumers) 
+negbin3atemp <- glm.nb(salesquantity~bops_in_effect+bops_user+bops_in_effect*bops_user+factor(store_number)+age_band+est_income_code, data=consumers) #eliminating the variables homeowner_code_dummy,child_dummy since they contain some NA values to compare with null model since null model does not contain NA values.
+lrtest(negbin3atemp, negbin3a) # # Model fits the data because LR test statistic is  significant.
+
+# Choosing between Poisson and Negative Binomial regressions
+lrtest(poisson3, negbin3) # The significant p-value indicates that the poisson model, which holds the dispersion parameter at constant, is less appropriate than the negative binomial model.
+
+# Obtain IRRs
+stargazer(negbin3, 
+          apply.coef = exp, t.auto=F, p.auto = F,
+          title="Consumer Sales Quantity Neg.Bin Results without considering female", type="text", 
+          column.labels=c("IRRs"),
+          df=FALSE, digits=4, star.cutoffs = c(0.05,0.01,0.001)) #The output indicates that the incident rate for TimeDummy:StoreDummy is  0.9586***. This means that implementing BOPS is associated with a 4% decrease in the average sales quantity of consumer.
+
+# Check for heteroscedasticity
+gqtest(negbin3) # Goldfeld-Quandt test does not indicate heteroscedasticity
+bptest(negbin3) # Breusch-Pagan test does not indicate heteroscedasticity
+
+# Visualize the output
+meffects3 <- ggpredict(negbin3, terms=c("bops_in_effect","bops_user")) # generates a tidy data frame at three different values of competence  
+ggplot(meffects3,aes(x, predicted, colour=group)) + geom_line(size=1.3) +
+   xlab("bops_in_effect") + ylab("Sales quantity") +
+    labs(colour="bops_user") + scale_colour_discrete(labels=c("0", "1")) + ggtitle("Consumer Level Sales Quantity")
+
+#Interaction between bops_in_effect and bops_user (considering female)
+negbin3b <- glm.nb(salesquantity~bops_in_effect+bops_user+bops_in_effect*bops_user+factor(store_number)+age_band+est_income_code+homeowner_code_dummy+child_dummy+purchase_time_period+female, data = consumers) 
+
+stargazer(negbin3b,  
+          title="Q3 Consumer Sales Quantity Poisson Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) #The interaction term has coefficient of -.04***, which is statistically significant. This means that implementing BOPS is associated with 4% decrease in the expected log count of sales quantity of consumer.
+
+
+# Model fit assessment
+negbin3ba <- glm.nb(salesquantity ~ 1, data = consumers) 
+negbin3btemp <- glm.nb(salesquantity~bops_in_effect+bops_user+bops_in_effect*bops_user+factor(store_number)+age_band+est_income_code, data=consumers) #eliminating the variables homeowner_code_dummy,child_dummy since they contain some NA values to compare with null model since null model does not contain NA values.
+lrtest(negbin3btemp, negbin3ba) # # Model fits the data because LR test statistic is  significant.
+
+# Choosing between Poisson and Negative Binomial regressions
+lrtest(poisson3b, negbin3b) # The significant p-value indicates that the poisson model, which holds the dispersion parameter at constant, is less appropriate than the negative binomial model.
+
+
+# Check for heteroscedasticity
+gqtest(negbin3b) # Goldfeld-Quandt test does not indicate heteroscedasticity
+bptest(negbin3b) # Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(negbin3b, type="HC1"))) # produces Huber-White robust standard errors 
+
+# Obtain IRRs
+stargazer(negbin3b, 
+          se=list(HWrobstder),
+          apply.coef = exp, t.auto=F, p.auto = F,
+          title="Consumer Sales Quantity considering female", type="text", 
+          column.labels=c("IRRs"),
+          df=FALSE, digits=4, star.cutoffs = c(0.05,0.01,0.001)) #The output indicates that the incident rate for TimeDummy:StoreDummy is  0.9671***. This means that implementing BOPS is associated with a 3% decrease in the average sales quantity of consumer.
+
+# Visualize the output
+meffects3b <- ggpredict(negbin3b, terms=c("bops_in_effect","bops_user")) # generates a tidy data frame at three different values of competence  
+ggplot(meffects3b,aes(x, predicted, colour=group)) + geom_line(size=1.3) +
+   xlab("bops_in_effect") + ylab("Sales quantity") +
+    labs(colour="bops_user") + scale_colour_discrete(labels=c("0", "1")) + ggtitle("Consumer Level Sales Quantity")
+
+```
+
+#==========================================================
+##  Implementing BOPS service is associated with 4.4% decrease in sales value of customer(4.4% not considering female but if female is considered it becomes insignificant) and 3.3% decrease in the sales quantity of consumer.
+#==========================================================
+
+#==========================================================
+##  LOAD AND EXPLORE DATA Q4 
+#==========================================================
+```{r}
+mydata4 = read.dta13("transaction level data.dta")
+
+hist(mydata4$price)
+hist(log(mydata4$price+1)) #log of price is more normally distributed compared to price
+
+# creating a new dataset from transaction data which will have data related to BOPS in effect period.
+newTransdata <- subset(mydata4,mydata4$bops==1 |mydata4$bops==0 )
+stargazer(newTransdata, type="text", median=TRUE, iqr=TRUE,digits=2, title="Descriptive Statistics")
+
+#Converting homeowner code to dummy.
+newTransdata$homeowner_dummy[newTransdata$homeowner_code == "O"]  <- 1  
+newTransdata$homeowner_dummy[newTransdata$homeowner_code == "R"]  <- 0
+
+#Converting Child to dummy.
+newTransdata$child_dummy[newTransdata$child == "Y"]  <- 1  
+newTransdata$child_dummy[newTransdata$child == "N"]  <- 0
+
+#Missing data in case of discrete variables are replaced with the median.
+newTransdata$age_band[is.na(newTransdata$age_band)] <- median(newTransdata$age_band,na.rm=TRUE)
+newTransdata$est_income_code[is.na(newTransdata$est_income_code)] <- median(newTransdata$est_income_code,na.rm=TRUE)
+newTransdata$length_of_residence[is.na(newTransdata$length_of_residence)] <- median(newTransdata$length_of_residence,na.rm=TRUE)
+newTransdata$product_category[is.na(newTransdata$product_category)] <- median(newTransdata$product_category,na.rm=TRUE)
+
+# Summary statistics
+stargazer(newTransdata, type="text", median=TRUE, iqr=TRUE,digits=1, title="Descriptive Statistics")
+
+##############
+##### female , child , homeowner_dummy cannot be set to mean/median as these are dummy. Total 13 variables. 1 IV (length_of_residence).  
+##############
+
+df <- data.frame(newTransdata$return,newTransdata$store_number,newTransdata$age_band,newTransdata$price,newTransdata$est_income_code,newTransdata$length_of_residence,newTransdata$year,newTransdata$month_dummy,newTransdata$female,newTransdata$homeowner_dummy,newTransdata$product_category,newTransdata$bops,newTransdata$child_dummy )
+cor(df, use="pairwise.complete.obs") # Generates the correlation matrix
+vifcor(df)# No variable from the 13 input variables has collinearity problem..
+
+#length_of_residence not included in the OLS model.
+
+```
+
+#==========================================================
+## Q4 MODEL DEVELOPMENT FOR TRANSACTION LEVEL SALES VALUE - OLS
+#==========================================================
+
+```{r}
+# considering female
+model4<- lm(return~bops+factor(store_number)+log(price+1)+factor(product_category)+est_income_code+age_band+factor(month_dummy)+factor(year)+child_dummy+homeowner_dummy+female, data=newTransdata) 
+
+stargazer(model4,  
+          title="Regression Results", type="text", 
+          column.labels=c("Model-4"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))# Coefficient for bops is significant and positive 0.02.
+#Heteroskedasticity test
+gqtest(model4)# P-Value not siginificant
+bptest(model4)# P-Value siginificant
+
+HWrobstder <- sqrt(diag(vcovHC(model4, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(model4, model4,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))# Coefficient for bops is significant and positive 0.02.
+
+# without considering female
+model44<- lm(return~bops+factor(store_number)+log(price+1)+factor(product_category)+est_income_code+age_band+factor(month_dummy)+factor(year)+child_dummy+homeowner_dummy, data=newTransdata) 
+
+stargazer(model44,  
+          title="Regression Results", type="text", 
+          column.labels=c("Model-44"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))# Coefficient for bops is significant and positive 0.02.
+#Heteroskedasticity test
+gqtest(model44)# P-Value not siginificant
+bptest(model44)# P-Value siginificant
+
+HWrobstder <- sqrt(diag(vcovHC(model4, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(model44, model44,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))# Coefficient for bops is significant and positive 0.02.
+
+####################LOGIT#########################
+##################################################
+# model with 9 independent variables. total parameters to be estimated 57
+
+sum(newTransdata$return==0)
+sum(newTransdata$return==1)
+# logit model is a good model to run.
+# considering female
+logit4<- glm(return~bops+factor(store_number)+log(price+1)+factor(product_category)+est_income_code+age_band+factor(month_dummy)+factor(year)+child_dummy+homeowner_dummy+female, data=newTransdata, family="binomial") # This is the command to run a logit regression 
+stargazer(logit4, 
+          title="Regression Results", type="text", 
+          column.labels=c("Logit-4"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))# log coeffiecient
+
+stargazer(logit4, 
+          apply.coef = exp, t.auto=F, p.auto = F,
+          title="Regression Results", type="text", 
+          column.labels=c("OddsRatios"),
+          df=FALSE, digits=4, star.cutoffs = c(0.05,0.01,0.001)) # exponentiated coefficients 
+
+#Model fit assessment 
+logittem<- glm(return~bops+factor(store_number)+log(price+1)+factor(product_category)+est_income_code+age_band+factor(month_dummy)+factor(year), data=newTransdata, family="binomial") # Temporary model to test for model fit assessment removing variables that has missing data.i.e child_dummy,
+logit4a <- glm(return~1, data=newTransdata, family="binomial") # This is the command to run a logit on null model
+
+lrtest(logittem, logit4a)# Test is significant. Logit model fits better then the null model.
+
+# Genarating Marginal effects
+a <- logitmfx(formula=return~bops+store_number+log(price+1)+product_category+est_income_code+age_band+month_dummy+factor(year)+child_dummy+homeowner_dummy+female, data=newTransdata)
+marginaleffects <- a$mfxest[,1]
+marg.std.err <- a$mfxest[,2]
+
+stargazer(logit4, 
+          omit=c("Constant"),
+          coef = list(marginaleffects), se = list(marg.std.err),
+          title="Regression Results", type="text", 
+          column.labels=c("Marginal Effects"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))#Coefficient for bops is significant and positive 0.02.
+### Coeffiecient of BOPS from marginal effects in logit model and linear probability model are quite similar (0.02***). Hence OLS can be used to test endogeniety. 
+
+# without considering female
+
+logit44<- glm(return~bops+factor(store_number)+log(price+1)+factor(product_category)+est_income_code+age_band+factor(month_dummy)+factor(year)+child_dummy+homeowner_dummy, data=newTransdata, family="binomial") # This is the command to run a logit regression 
+stargazer(logit44, 
+          title="Regression Results", type="text", 
+          column.labels=c("Logit-44"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))# log coeffiecient
+
+stargazer(logit44, 
+          apply.coef = exp, t.auto=F, p.auto = F,
+          title="Regression Results", type="text", 
+          column.labels=c("OddsRatios"),
+          df=FALSE, digits=4, star.cutoffs = c(0.05,0.01,0.001)) # exponentiated coefficients 
+
+#Model fit assessment 
+logittem<- glm(return~bops+factor(store_number)+log(price+1)+factor(product_category)+est_income_code+age_band+factor(month_dummy)+factor(year), data=newTransdata, family="binomial") # Temporary model to test for model fit assessment removing variables that has missing data.i.e child_dummy,
+logit44a <- glm(return~1, data=newTransdata, family="binomial") # This is the command to run a logit on null model
+
+lrtest(logittem, logit44a)# Test is significant. Logit model fits better then the null model.
+
+# Genarating Marginal effects
+a <- logitmfx(formula=return~bops+store_number+log(price+1)+product_category+est_income_code+age_band+month_dummy+factor(year)+child_dummy+homeowner_dummy, data=newTransdata)
+marginaleffects <- a$mfxest[,1]
+marg.std.err <- a$mfxest[,2]
+
+stargazer(logit44, 
+          omit=c("Constant"),
+          coef = list(marginaleffects), se = list(marg.std.err),
+          title="Regression Results", type="text", 
+          column.labels=c("Marginal Effects"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))#Coefficient for bops is significant and positive 0.02.
+### Coeffiecient of BOPS from marginal effects in logit model and linear probability model are quite similar (0.02***). Hence OLS can be used to test endogeniety. 
+
+########IV Model###########
+# considering female
+model7<- ivreg(return~bops+factor(store_number)+log(price+1)+factor(product_category)+est_income_code+age_band+factor(month_dummy)+factor(year)+child_dummy+homeowner_dummy+female|length_of_residence+factor(store_number)+log(price+1)+factor(product_category)+est_income_code+age_band+factor(month_dummy)+factor(year)+child_dummy+homeowner_dummy+female, data=newTransdata) # gives IV estimator
+summary(model7,diagnostics = TRUE)# coefficient for bops is 0.4989 (positive)
+stargazer(model7, 
+          title="Regression Results", type="text", 
+          column.labels=c("model7"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+df1<-newTransdata[c("return","length_of_residence","bops")]# to check colliniearity between return and length_of_residence.
+cor(df1, use="pairwise.complete.obs") # colliniearity between return and length_of_residence is very less almost 0 i.e 0.008006505. 
+
+# without considering female
+model77<- ivreg(return~bops+factor(store_number)+log(price+1)+factor(product_category)+est_income_code+age_band+factor(month_dummy)+factor(year)+child_dummy+homeowner_dummy|length_of_residence+factor(store_number)+log(price+1)+factor(product_category)+est_income_code+age_band+factor(month_dummy)+factor(year)+child_dummy+homeowner_dummy, data=newTransdata) # gives IV estimator
+summary(model77,diagnostics = TRUE)# coefficient for bops is 0.4948 (positive)
+stargazer(model77, 
+          title="Regression Results", type="text", 
+          column.labels=c("model77"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+df2<-newTransdata[c("return","length_of_residence","bops")]# to check colliniearity between return and length_of_residence.
+cor(df2, use="pairwise.complete.obs") # colliniearity between return and length_of_residence is very less almost 0 i.e 0.008006505.
+
+```
+#==========================================================
+##  # 1st assumption is satisfied.
+# 2nd assumption expert knowledge needs to be used as the model is just-identified we won't get the sargan test value.
+# Conceptually length of residence is not correlated with dependent variable and is correalated with BOPS user as customer staying at his current address is well aware of the store locations near by he is more likely to opt. for the bops service then the customer who is new at his current address.  
+# coeffiecient for BOPS = 0.4948***
+# Customer using BOPS has 49.4pp more return propensity than customer using home delivery.
+#No change in BOPS coefficient with and without female control variable.
+#==========================================================
+#==========================================================
+##  LOAD AND EXPLORE DATA Q5 and Q6
+#==========================================================
+```{r}
+mydata56 = read.dta13("online daily prod_cat sales-returns data.dta")
+
+# Summary statistics
+stargazer(mydata56, type="text", median=TRUE, iqr=TRUE,digits=1, title="Descriptive Statistics")  
+mydata56$avg_female[is.na(mydata56$avg_female)] <- mean(mydata56$avg_female,na.rm=TRUE)
+mydata56$avg_age[is.na(mydata56$avg_age)] <- mean(mydata56$avg_age,na.rm=TRUE)
+mydata56$avg_income[is.na(mydata56$avg_income)] <- mean(mydata56$avg_income,na.rm=TRUE)
+mydata56$avg_homeowner[is.na(mydata56$avg_homeowner)] <- mean(mydata56$avg_homeowner,na.rm=TRUE)
+mydata56$avg_residency[is.na(mydata56$avg_residency)] <- mean(mydata56$avg_residency,na.rm=TRUE)
+mydata56$avg_childowner[is.na(mydata56$avg_childowner)] <- mean(mydata56$avg_childowner,na.rm=TRUE)
+
+hist(mydata56$salesvalue)
+hist(log(mydata56$salesvalue)) #log of salesvalue is more normally distributed compared to salesvalue
+
+hist(mydata56$salesquantity) 
+hist(log(mydata56$salesquantity)) # log of salesquantity is more normally distributed 
+
+hist(mydata56$returnvalue) 
+hist(log(mydata56$returnvalue)) # log of returnvalue is more normally distributed
+
+hist(mydata56$returnquantity) 
+hist(log(mydata56$returnquantity)) #log of returnquantity is more normally distributed
+
+```
+
+#==========================================================
+##CREATING TIME FRAME AND GROUPING VARIABLES
+#==========================================================
+```{r}
+products <- subset(mydata56, mydata56$day < 788)
+products$TimeDummy<- ifelse(products$day < 366,0,1)
+products$StoreDummy <- ifelse(products$store_number == 5998 ,0,1)
+products$logsalesvalue<-log(products$salesvalue+1)
+products$logreturnvalue<-log(products$returnvalue+1)
+
+stargazer(products, type="text", median=TRUE, iqr=TRUE,digits=1, title="Descriptive Statistics")  
+## Detecting Multicollinearity
+
+df=data.frame(products$TimeDummy,products$StoreDummy, products$month_dummy, products$avg_female, products$avg_age, products$avg_income, products$avg_homeowner, products$avg_residency, products$avg_childowner, products$product_category)
+
+
+cor(df) #no more collinearity 
+vifcor(df) 
+```
+
+#==========================================================
+## Q5 MODEL DEVELOPMENT FOR PRODUCT LEVEL SALES VALUE - OLS
+#==========================================================
+
+```{r}
+
+#Interaction between StoreDummy and TimeDummy 
+res5 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(product_category)+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=products)
+
+gqtest(res5) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(res5) # Significant Breusch-Pagan test indicates heteroscedasticity
+
+HWrobstder <- sqrt(diag(vcovHC(res5, type="HC1"))) # produces Huber-White robust standard errors 
+stargazer(res5,  
+          se=list(HWrobstder),
+          title="Q5 Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001)) #For store number 2 and 6,BOPS implementation is associated with 28.8%  decrease in product sales value
+
+meffects5 <- ggpredict(res5, terms=c("TimeDummy", "StoreDummy")) # generates a tidy data frame  
+ggplot(meffects5,aes(x, predicted, colour=group)) + geom_line(size=1.3) + 
+    xlab("TimeDummy") + ylab("Log Product Sales Value") +
+    labs(colour="Stores") + 
+    scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6"))+ ggtitle("Product Level Sales Value")
+
+```
+#==========================================================
+## For store number 2 and 6,BOPS implementation is associated with 28.8%  decrease in product sales value
+#==========================================================
+
+#==========================================================
+## Q5 MODEL DEVELOPMENT FOR PRODUCT SALES QUANTITY - POISSON
+#==========================================================
+
+```{r}
+
+poisson5 <- glm(salesquantity~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(product_category)+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner, family="poisson", data=products)
+
+stargazer(poisson5,  
+          title="Q5 Product Sales Quantity Poisson Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+## Model fit assessment 
+poisson5a <- glm(salesquantity~1, data=products, family="poisson") 
+lrtest(poisson5, poisson5a) # MODEL DOES NOT FIT THE DATA
+
+```
+
+#==========================================================
+## Q5 MODEL DEVELOPMENT FOR PRODUCT SALES QUANTITY - NEGATIVE BINOMIAL
+#==========================================================
+
+```{r}
+negbin5 <- glm.nb(salesquantity~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(product_category)+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner, data = products) 
+
+stargazer(negbin5,  
+          title="Q5 Product Sales Quantity Poisson Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+# Model fit assessment
+negbin5a <- glm.nb(salesquantity ~ 1, data = products) 
+lrtest(negbin5, negbin5a) # # Model fits the data because LR test statistics (70.93) is  significant.
+
+# Choosing between Poisson and Negative Binomial regressions
+lrtest(poisson5, negbin5) # The insignificant p-value indicates that the poisson model, which holds the dispersion parameter at constant, is more appropriate than the negative binomial model.
+
+# Check for heteroscedasticity
+gqtest(negbin5) # Goldfeld-Quandt test does not indicate heteroscedasticity
+bptest(negbin5) # Breusch-Pagan test indicates heteroscedasticity
+
+HWrobstder <- sqrt(diag(vcovHC(negbin5, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(negbin5,  
+          apply.coef = exp, t.auto=F, p.auto = F,
+          se=list(HWrobstder),
+          title="Q5 Product Sales Quantity Poisson Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))  # For store number 2 and 6,BOPS implementation is associated with 32%  decrease in product sales quantity
+
+# Visualize the output
+meffects5 <- ggpredict(negbin5, terms=c("TimeDummy","StoreDummy")) # generates a tidy data frame at three different values of competence  
+ggplot(meffects5,aes(x, predicted, colour=group)) + geom_line(size=1.3) +
+   xlab("TimeDummy") + ylab("Product Sales quantity") +
+    labs(colour="Stores") + scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6")) + ggtitle("Product Level Sales Quantity")
+
+```
+
+#==========================================================
+## For store number 2 and 6,BOPS implementation is associated with 32%  decrease in product sales quantity
+#==========================================================
+
+#==========================================================
+## Q5 B MODEL DEVELOPMENT FOR PRODUCT LEVEL RETURN VALUE - OLS
+#==========================================================
+
+```{r}
+
+#Interaction between StoreDummy and TimeDummy 
+res5b = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(product_category)+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=products)
+
+gqtest(res5b) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(res5b) # Significant Breusch-Pagan test indicates heteroscedasticity
+
+HWrobstder <- sqrt(diag(vcovHC(res5b, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(res5b,  
+          se=list(HWrobstder),
+          title="Q5 Product Return Value Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001)) 
+
+meffects5b <- ggpredict(res5b, terms=c("TimeDummy", "StoreDummy"))   
+ggplot(meffects5b,aes(x, predicted, colour=group)) + geom_line(size=1.3) + 
+    xlab("TimeDummy") + ylab("Log Product Return Value") +
+    labs(colour="Stores") + 
+    scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6"))+ ggtitle("Product Level Return Value")
+
+```
+
+#==========================================================
+##For store number 2 and 6,BOPS implementation is associated with 32.7%  decrease in product return value
+#==========================================================
+
+#==========================================================
+## Q5 B MODEL DEVELOPMENT FOR PRODUCT RETURN QUANTITY - POISSON
+#==========================================================
+
+```{r}
+
+poisson5b <- glm(returnquantity~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(product_category)+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner+salesquantity, family="poisson", data=products)
+
+
+stargazer(poisson5b,  
+          title="Q5 Product Return Quantity Poisson Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+## Model fit assessment 
+poisson5ba <- glm(returnquantity~1, data=products, family="poisson") 
+lrtest(poisson5b, poisson5ba) # MODEL DOES NOT FIT THE DATA
+
+```
+
+#==========================================================
+## Q5 B MODEL DEVELOPMENT FOR PRODUCT RETURN QUANTITY - NEGATIVE BINOMIAL
+#==========================================================
+
+```{r}
+negbin5b <- glm.nb(returnquantity~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(product_category)+factor(month_dummy)+avg_female+ avg_age+avg_income+avg_homeowner+avg_childowner+salesquantity, data = products) 
+
+stargazer(negbin5b,  
+          title="Q5 Product Return Quantity Neg Bin Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE , digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+# Model fit assessment
+negbin5ba <- glm.nb(returnquantity ~ 1, data = products) 
+lrtest(negbin5b, negbin5ba) # # Model fits the data because LR test statistic is  significant.
+
+# Choosing between Poisson and Negative Binomial regressions
+lrtest(poisson5b, negbin5b) # The insignificant p-value indicates that the poisson model, which holds the dispersion parameter at constant, is more appropriate than the negative binomial model.
+
+# Check for heteroscedasticity
+gqtest(negbin5b) # Goldfeld-Quandt test does not indicates heteroscedasticity
+bptest(negbin5b) # Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(negbin5b, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(negbin5b,  
+          apply.coef = exp, t.auto=F, p.auto = F,
+          se=list(HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))  #For store number 2 and 6,BOPS implementation is associated with 38%  decrease in product return quantity
+
+# Visualize the output
+meffects5b <- ggpredict(negbin5b, terms=c("TimeDummy","StoreDummy")) # generates a tidy data frame at three different values of competence  
+ggplot(meffects5b,aes(x, predicted, colour=group)) + geom_line(size=1.3) +
+   xlab("TimeDummy") + ylab("Return quantity") +
+    labs(colour="Stores") + scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6")) + ggtitle("Product Level Return Quantity")
+
+```
+
+#==========================================================
+## #For store number 2 and 6,BOPS implementation is associated with 38%  decrease in product return quantity.
+#==========================================================
+
+#==========================================================
+## Q6 MODEL DEVELOPMENT FOR BOPS ACROSS PRODUCT CATEGORIES - OLS (SALES)
+#==========================================================
+
+```{r}
+
+#Interaction between StoreDummy and TimeDummy 
+
+products$factorproduct_category <- factor(products$product_category)
+
+res6 = lm(logsalesvalue~TimeDummy+StoreDummy+factorproduct_category+TimeDummy*StoreDummy*factorproduct_category+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=products)
+
+gqtest(res6) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(res6) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(res6, type="HC1")))  
+
+stargazer(res6,  
+          se=list(HWrobstder),
+          title="Q6 Regression Results", type="text", 
+          column.labels=c("HW-Robust SE"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  
+
+meffects6 <- ggpredict(res6, terms=c("TimeDummy","StoreDummy","factorproduct_category"))
+
+ggplot(meffects6, aes(x,predicted, colour=group)) + 
+  geom_line() + facet_wrap(~ facet) +
+  ggtitle("TimeDummy and StoreDummy, by Level of Product_Category") +
+  labs(colour="")
+
+#Subset Product Categories 
+dfset1<- subset(products, factorproduct_category==1)
+dfset2<- subset(products, factorproduct_category==2)
+dfset3<- subset(products, factorproduct_category==3)
+dfset4<- subset(products, factorproduct_category==4)
+dfset5<- subset(products, factorproduct_category==5)
+dfset6<- subset(products, factorproduct_category==6)
+dfset7<- subset(products, factorproduct_category==7)
+dfset8<- subset(products, factorproduct_category==8)
+dfset9<- subset(products, factorproduct_category==9)
+dfset10<- subset(products, factorproduct_category==10)
+dfset11<- subset(products, factorproduct_category==11)
+dfset12<- subset(products, factorproduct_category==12)
+dfset13<- subset(products, factorproduct_category==13)
+dfset14<- subset(products, factorproduct_category==14)
+dfset15<- subset(products, factorproduct_category==15)
+dfset17<- subset(products, factorproduct_category==17)
+dfset20<- subset(products, factorproduct_category==20)
+dfset21<- subset(products, factorproduct_category==21)
+
+
+Model1 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset1) #Implementing the BOPS Strategy is associated with 31.5% decrease in sales value of Product Category 1
+
+gqtest(Model1) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model1) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder1 <- sqrt(diag(vcovHC(Model1, type="HC1")))  
+
+Model2 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset2) #Implementing the BOPS Strategy is associated with 38.9% decrease in sales value of Product Category 2
+
+gqtest(Model2) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model2) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder2 <- sqrt(diag(vcovHC(Model2, type="HC1")))  
+
+Model3 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset3)
+
+gqtest(Model3) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model3) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder3 <- sqrt(diag(vcovHC(Model3, type="HC1")))  
+
+Model4 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset4) #Implementing the BOPS Strategy is associated with 61.9% decrease in sales value of Product Category 4.
+
+gqtest(Model4) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model4) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder4 <- sqrt(diag(vcovHC(Model4, type="HC1")))  
+
+Model5 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset5)
+
+gqtest(Model5) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model5) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder5 <- sqrt(diag(vcovHC(Model5, type="HC1")))  
+
+Model6 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset6)
+
+gqtest(Model6) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model6) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder6 <- sqrt(diag(vcovHC(Model6, type="HC1")))  
+
+Model7 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset7)
+
+gqtest(Model7) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model7) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder7 <- sqrt(diag(vcovHC(Model7, type="HC1")))  
+
+Model8 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset8)
+
+gqtest(Model8) # Significant Goldfeld-Quandt test indicates heteroscedasticity 
+bptest(Model8) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder8 <- sqrt(diag(vcovHC(Model8, type="HC1")))  
+
+Model9 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset9) #Implementing the BOPS Strategy is associated with 36.8% increase in sales value of Product Category 9
+
+gqtest(Model9) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model9) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder9 <- sqrt(diag(vcovHC(Model9, type="HC1")))  
+
+Model10 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset10)
+
+gqtest(Model10) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model10) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder10 <- sqrt(diag(vcovHC(Model10, type="HC1")))  
+
+Model11 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset11)
+
+gqtest(Model11) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model11) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder11 <- sqrt(diag(vcovHC(Model11, type="HC1")))  
+
+Model12 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset12)  #Implementing the BOPS Strategy is associated with 31.3% decrease in sales value of Product Category 12
+
+gqtest(Model12) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model12) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder12 <- sqrt(diag(vcovHC(Model12, type="HC1")))  
+
+Model13 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset13)
+
+gqtest(Model13) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model13) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder13 <- sqrt(diag(vcovHC(Model13, type="HC1")))  
+
+Model14 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset14) #Implementing the BOPS Strategy is associated with 113% decreases in sales value of Product Category 14.
+
+gqtest(Model14) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model14) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder14 <- sqrt(diag(vcovHC(Model14, type="HC1")))  
+
+Model15 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset15)
+
+bptest(Model15) # Significant Breusch-Pagan test does not indicate heteroscedasticity
+
+Model17 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset17)
+
+gqtest(Model17) # Significant Goldfeld-Quandt test indicates heteroscedasticity 
+bptest(Model17) # Significant Breusch-Pagan test does not indicate heteroscedasticity
+HWrobstder17 <- sqrt(diag(vcovHC(Model17, type="HC1")))  
+
+Model20 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset20)
+
+gqtest(Model20) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model20) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder20 <- sqrt(diag(vcovHC(Model20, type="HC1")))  
+
+Model21 = lm(logsalesvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner,data=dfset21)  #Implementing the BOPS Strategy is associated with 39.6% decrease in sales value of Product Category 21
+
+gqtest(Model21) # Significant Goldfeld-Quandt test does not indicate heteroscedasticity 
+bptest(Model2) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder21 <- sqrt(diag(vcovHC(Model21, type="HC1")))  
+
+stargazer(Model1, Model2,Model3,Model4,  
+          se=list(HWrobstder1,HWrobstder1,HWrobstder1,HWrobstder1),
+          title="Q6 Regression Results", type="text", 
+          column.labels=c("Model1", "Model2", "Model3", "Model4"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  
+
+
+stargazer(Model5, Model6,Model7,Model8,  
+          se=list(HWrobstder5,HWrobstder6,HWrobstder7,HWrobstder8),
+          title="Q6 Regression Results", type="text", 
+          column.labels=c("Model5", "Model6", "Model7", "Model8"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  
+
+stargazer(Model9, Model10,Model11,Model12,  
+          se=list(HWrobstder9,HWrobstder10,HWrobstder11,HWrobstder12),
+          title="Q6 Regression Results", type="text", 
+          column.labels=c("Model9", "Model10", "Model11", "Model12"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  
+
+stargazer(Model13, Model14,Model15,Model17,  
+          se=list(HWrobstder13,HWrobstder14,NULL,HWrobstder17),
+          title="Q6 Regression Results", type="text", 
+          column.labels=c("Model13", "Model14", "Model15", "Model17"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  
+
+stargazer(Model20, Model21,  
+          se=list(HWrobstder20,HWrobstder21),
+          title="Q6 Regression Results", type="text", 
+          column.labels=c("Model20", "Model21"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))
+
+#High Impact Categories
+stargazer(Model14, Model4,Model21, Model2, Model1, Model12, 
+          se=list(HWrobstder14,HWrobstder4,HWrobstder21,HWrobstder2,HWrobstder1,
+                  HWrobstder12),
+          title="Q6 Regression Results", type="text", 
+          column.labels=c("Model14", "Model4", "Model21", "Model2","Model1","Model12"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  
+
+
+#Medium Impact Categories
+stargazer(Model9, Model11, Model13,Model3, Model20, Model7, Model6, 
+          se=list(HWrobstder9, HWrobstder11,HWrobstder13,HWrobstder3,HWrobstder20,HWrobstder7,
+                  HWrobstder6),
+          title="Q6 Regression Results", type="text", 
+          column.labels=c("Model9","Model11", "Model13", "Model3", "Model20","Model7","Model6"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  
+
+
+#Low Impact Categories
+stargazer(Model5, Model8,Model10, Model15, Model17, 
+          se=list(HWrobstder5,HWrobstder8,HWrobstder10,NULL,HWrobstder17),
+          title="Q6 Regression Results", type="text", 
+          column.labels=c("Model5", "Model8", "Model10", "Model15","Model17"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  
+
+#Analysis - Generating the mean price for each product category to understand the prices of the product categories
+Aggregate_data <- aggregate(newTransdata[c("price")], by=list(newTransdata$product_category), mean) 
+```
+
+
+#==========================================================
+## High Impact Categories
+# Watches(113%),Diamond Solitaires Jewelry(61.9%), Events(39.6%), Solitaires(38.9%), Bridal(31.5%), Piercings / Close Out(31.3%) are associated with a decrease in sales value after BOPS is implemented.
+
+## Medium Impact Categories
+#Gold Earrings, Beads, Gold Chain / Jewelry, Diamond Fashion, Estate, Semi Precious, Gold Wed Bands
+
+## Low Impact Categories
+#Diamond Wedding Band, Mens, In House Special Event, Pre-Owned
+
+## Most of the products in high impact categories are low price items. BOPS implementation is associated with decrease in sales value of low price items.
+#==========================================================
+
+#==========================================================
+## Q6 MODEL DEVELOPMENT FOR BOPS ACROSS PRODUCT CATEGORIES (RETURNS) - OLS
+#==========================================================
+
+```{r}
+#Interaction between StoreDummy and TimeDummy 
+products$logreturnvalue <- log(products$returnvalue+1)
+products$logsalesvalue <- log(products$salesvalue+1)
+
+products$factorproduct_category <- factor(products$product_category)
+
+res6b = lm(logreturnvalue~TimeDummy+StoreDummy+factorproduct_category+TimeDummy*StoreDummy*factorproduct_category+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=products)
+
+gqtest(res6b) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(res6b) # Significant Breusch-Pagan test indicates heteroscedasticity
+
+HWrobstder <- sqrt(diag(vcovHC(res6b, type="HC1"))) # produces Huber-White robust standard errors 
+
+stargazer(res6b,  
+          se=list(HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("HW-Robust SE"),
+          df=FALSE, digits=3, star.cutoffs = c(0.05,0.01,0.001))  # displays normal/HW robust  standard errors. objective quality is not significant and perceived quality is significant and as expected
+
+###Plot of different product category
+meffects6 <- ggpredict(res6b, terms=c("TimeDummy", "StoreDummy","factorproduct_category")) # generates a tidy data frame  
+ggplot(meffects6,aes(x, predicted, colour=group)) + geom_line(size=1.3) + facet_wrap(~ facet) + xlab("TimeDummy") + ylab("LogReturnvalue") + labs(colour="Stores") + scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6"))+ ggtitle("BOPS Strategy on different product categories return")
+
+ggplot(meffects6,aes(x, predicted, colour=group)) + geom_line() + facet_wrap(~ facet) + ggtitle("BOPS Strategy on different product categories return")+ labs(colour="")
+
+
+dfset1<- subset(products, factorproduct_category==1)
+dfset2<- subset(products, factorproduct_category==2)
+dfset3<- subset(products, factorproduct_category==3)
+dfset4<- subset(products, factorproduct_category==4)
+dfset5<- subset(products, factorproduct_category==5)
+dfset6<- subset(products, factorproduct_category==6)
+dfset7<- subset(products, factorproduct_category==7)
+dfset8<- subset(products, factorproduct_category==8)
+dfset9<- subset(products, factorproduct_category==9)
+dfset10<- subset(products, factorproduct_category==10)
+dfset11<- subset(products, factorproduct_category==11)
+dfset12<- subset(products, factorproduct_category==12)
+dfset13<- subset(products, factorproduct_category==13)
+dfset14<- subset(products, factorproduct_category==14)
+dfset15<- subset(products, factorproduct_category==15)
+dfset17<- subset(products, factorproduct_category==17)
+dfset20<- subset(products, factorproduct_category==20)
+dfset21<- subset(products, factorproduct_category==21)
+
+ModelA = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset1)
+gqtest(ModelA) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelA) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelA, type="HC1"))) # produces Huber-White robust standard errors 
+stargazer(ModelA, ModelA,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelB = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset2)
+gqtest(ModelB) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelB) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelB, type="HC1")))
+stargazer(ModelB, ModelB,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelC = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset3)
+gqtest(ModelC) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelC) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelC, type="HC1")))
+stargazer(ModelC, ModelC,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelD = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset4)
+gqtest(ModelD) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelD) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelD, type="HC1")))
+stargazer(ModelD, ModelD,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+#Generate Plot
+meffectsD <- ggpredict(ModelD, terms=c("TimeDummy", "StoreDummy")) # generates a tidy data frame 
+ggplot(meffectsD,aes(x, predicted, colour=group)) + geom_line(size=1.3) + xlab("TimeDummy") + ylab("Return Value") + labs(colour="Stores") + scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6")) + ggtitle("BOPS Strategy on product categorie 4 return")
+#Summary Result:After Bops strategy implement, the returnvalue of Diamond fashion decrease by 95%.
+
+
+
+ModelE = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset5)
+gqtest(ModelE) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelE) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelE, type="HC1")))
+stargazer(ModelE, ModelE,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelF = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset6)
+gqtest(ModelF) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelF) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelF, type="HC1")))
+stargazer(ModelF, ModelF,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelG = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset7)
+gqtest(ModelG) # Significant Goldfeld-Quandt test not indicate heteroscedasticity 
+bptest(ModelG) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelG, type="HC1")))
+stargazer(ModelG, ModelG,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelH = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset8)
+gqtest(ModelH) # Significant Goldfeld-Quandt test indicate no heteroscedasticity 
+bptest(ModelH) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelH, type="HC1")))
+stargazer(ModelH, ModelH,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelI = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset9)
+gqtest(ModelI) # Significant Goldfeld-Quandt test indicate no heteroscedasticity 
+bptest(ModelI) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelI, type="HC1")))
+stargazer(ModelI, ModelI,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelJ = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset10)
+gqtest(ModelJ) # Significant Goldfeld-Quandt test indicate no heteroscedasticity 
+bptest(ModelJ) # Significant Breusch-Pagan test indicates no heteroscedasticity
+stargazer(ModelJ,
+          title="Q1 Regression Results", type="text", 
+          column.labels=c(""),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelK = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset11)
+gqtest(ModelK) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelK) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelK, type="HC1")))
+stargazer(ModelK, ModelK,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelL = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset12)
+gqtest(ModelL) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelL) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelL, type="HC1")))
+stargazer(ModelL, ModelL,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelM = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset13)
+gqtest(ModelM) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelM) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelM, type="HC1")))
+stargazer(ModelM, ModelM,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+#Generate Plot
+meffectsM <- ggpredict(ModelM, terms=c("TimeDummy", "StoreDummy")) # generates a tidy data frame 
+ggplot(meffectsM,aes(x, predicted, colour=group)) + geom_line(size=1.3) + xlab("TimeDummy") + ylab("Return Value") + labs(colour="Stores") + scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6")) + ggtitle("BOPS Strategy on product categorie 13 return")
+#Summary Result:After Bops strategy implement, the returnvalue of Watches decrease by 83%.
+
+
+ModelN = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset14)
+gqtest(ModelN) # Significant Goldfeld-Quandt test indicate no heteroscedasticity 
+bptest(ModelN) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelN, type="HC1")))
+stargazer(ModelN, ModelN,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelO = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset15)
+#gqtest(ModelO) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelO) # Significant Breusch-Pagan test indicates no heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelO, type="HC1")))
+stargazer(ModelO, ModelO,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelP = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset17)
+gqtest(ModelP) # Significant Goldfeld-Quandt test indicate no heteroscedasticity 
+bptest(ModelP) # Significant Breusch-Pagan test indicates no heteroscedasticity
+
+stargazer(ModelP,
+          title="Q1 Regression Results", type="text", 
+          column.labels=c(""),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+
+ModelQ = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset20)
+gqtest(ModelQ) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelQ) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelQ, type="HC1")))
+stargazer(ModelQ, ModelQ,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+#Generate Plot
+meffectsQ <- ggpredict(ModelQ, terms=c("TimeDummy", "StoreDummy")) # generates a tidy data frame 
+ggplot(meffectsD,aes(x, predicted, colour=group)) + geom_line(size=1.3) + xlab("TimeDummy") + ylab("Return Value") + labs(colour="Stores") + scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6")) + ggtitle("BOPS Strategy on product categorie 20 return")
+#Summary Result:After Bops strategy implement, the returnvalue of Diamond wedding band decrease by 90%.
+
+
+ModelR = lm(logreturnvalue~TimeDummy+StoreDummy+TimeDummy*StoreDummy+factor(month_dummy)+avg_female+avg_age+avg_income+avg_homeowner+avg_childowner+logsalesvalue,data=dfset21)
+gqtest(ModelR) # Significant Goldfeld-Quandt test indicate heteroscedasticity 
+bptest(ModelR) # Significant Breusch-Pagan test indicates heteroscedasticity
+HWrobstder <- sqrt(diag(vcovHC(ModelR, type="HC1")))
+stargazer(ModelR, ModelR,  
+          se=list(NULL, HWrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001))
+#Generate Plot
+meffectsR <- ggpredict(ModelR, terms=c("TimeDummy", "StoreDummy")) # generates a tidy data frame 
+ggplot(meffectsR,aes(x, predicted, colour=group)) + geom_line(size=1.3) + xlab("TimeDummy") + ylab("Return Value") + labs(colour="Stores") + scale_colour_discrete(labels=c("Store 5998", "Store 2 & 6")) + ggtitle("BOPS Strategy on product categorie 21 return")
+#Summary Result:After Bops strategy implement, the returnvalue of Sterling Silver decrease by 53%
+
+```
+#==========================================================
+#==========================================================
+## High Impact Categories
+# Diamond fashion(95%),Diamond Wedding band(90%), Watches(83%),Sterling Silver(53%) are associated with a decrease in return value after BOPS is implemented.
+
+## Medium Impact Categories
+#Bridal,Gold Wed Bands,Beads,Diamond-Solitaires Jewelry,Diamond-Wedding Band
+
+## Low Impact Categories
+#Solitaires, Semi Precious,Mens, Gold Earrings, Gold Chain/Jewelry
+#==========================================================
