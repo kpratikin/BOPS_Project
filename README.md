@@ -36,11 +36,13 @@ One approach to evaluate impact of BOPS is to look at the difference in variable
 
 For difference in difference approach, we need to have control and treatment groups. For this, we divided time period into dummy variable (i.e. Time Dummy where 0- indicates period where BOPS is not implemented (in any of the stores) and 1- indicates period where BOPS is implemented (in stores 2&6 but not in 5998)). Here stores 2&6 are treatment groups (store dummy-1) and store 5998 is control group (store dummy-0). 
 
-![Image of Data Timeperiod](https://github.com/kpratikin/BOPS_Project/blob/master/timeline%20and%20treatment.PNG)
+<p align="center"><img src="https://github.com/kpratikin/BOPS_Project/blob/master/timeline%20and%20treatment.PNG">
+ <br>Figure: Timeperiod
+ </p>
 
-
-![Image of Data Timeperiod](https://github.com/kpratikin/BOPS_Project/blob/master/impact%20of%20bops.PNG)
-Figure - Difference in Difference approach to capture 'Impact of BOPS on sales'
+<p align="center"><img src="https://github.com/kpratikin/BOPS_Project/blob/master/impact%20of%20bops.PNG">
+ <br>Figure: Difference in Difference approach to capture 'Impact of BOPS on sales'
+ </p>
 
 Figure above, indicates how we captured the impact of BOPS keeping every other factors as constant. If the control and treatment groups does not change their slopes (from pre-implementation (Time Dummy=0) to post-implementation (Time Dummy=1) i.e. they slopes are parallel), then it indicates that there is no impact of BOPS on sales/returns. However, if we observe change in slope between pre-implementation (Time Dummy=0) to post-implementation (Time Dummy=1) period (i.e. for stores, where BOPS implemented we observed slope change as compared to store where BOPS are not implemented) then this change is because of BOPS strategy.
 
@@ -50,7 +52,9 @@ Refer code - https://github.com/kpratikin/BOPS_Project/blob/master/BOPS.rmd
 <br><b>Conclusion & Suggestions:</b><br>
 Our analysis of the impact of BOPS strategy on online sales and returns shows that online sales and returns do not increase with the implementation of this strategy. It rather decreases. 
 
-![Image of Data Timeperiod](https://github.com/kpratikin/BOPS_Project/blob/master/Conclusion.PNG)
+<p align="center"><img src="https://github.com/kpratikin/BOPS_Project/blob/master/Conclusion.PNG">
+ </p>
+
 
 One of the anticipated reason behind this decrease is ‘Channel-Shift’ effect i.e. after checking the product online, customers are visiting nearby stores to buy that product, instead of buying it online. This corroborates with the consumer behavior phenomenon i.e. research online, purchase offline. Because of this effect, we may be observing decrease in online sales/returns but if we include offline sales/returns data in our analysis, we may observe that there is net increase in sales/returns. Therefore, we recommend to include offline store data for the analysis to come up with the net impact of the BOPS on overall sales and return instead of focusing on one channel.
 
