@@ -16,6 +16,7 @@ BOPS provides tangible benefits to both consumers and retailers, as per eMarkete
  <b><br>
 About available data:</b><br>
 The data is from national jewelry retailer (In order to maintain confidentiality, the name of the company is not disclosed). The data covers all online transactions made between August 1st, 2010 and July 31st, 2013. 
- 
+
+![Image of Data Timeline](https://github.com/kpratikin/BOPS_Project/blob/master/Data%20availiability%20and%20timeline.PNG)
 Figure 1: Data Timeline 
  
