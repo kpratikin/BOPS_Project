@@ -25,9 +25,9 @@ The data is from national jewelry retailer (In order to maintain confidentiality
  <ul><li>Online channels 2 and 6 started the BOPS strategy on August 1st, 2011.</li> 
 <li>Online channel 5998 started the BOPS strategy on September 27th, 2012.</li></ul>
 <br>
-<b>TRANSACTION LEVEL DATA:</b> This dataset includes all transactions made between August 1st, 2010 and July 31st, 2013.
-<b>CONSUMER LEVEL DATA:</b>  This dataset includes the purchase information of all customers who both made at least one purchase before the BOPS implementation and made at least one purchase after the BOPS implementation  
-<b>ONLINE LEVEL DATA:</b> Online daily sales-returns dataset includes sales and returns at each online store for a given day.
+<b><ul><li>TRANSACTION LEVEL DATA:</b> This dataset includes all transactions made between August 1st, 2010 and July 31st, 2013.
+<b><li>CONSUMER LEVEL DATA:</b>  This dataset includes the purchase information of all customers who both made at least one purchase before the BOPS implementation and made at least one purchase after the BOPS implementation  
+<b><li>ONLINE LEVEL DATA:</b> Online daily sales-returns dataset includes sales and returns at each online store for a given day.</ul>
 <br>
  
 <b>Methodology for evaluating the impact of BOPS</b><br>
