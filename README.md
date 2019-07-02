@@ -7,10 +7,11 @@ Online-offline integrations can be achieved in different ways. One such strategy
 
 BOPS provides tangible benefits to both consumers and retailers, as per eMarketer's website "with BOPS, Consumers get convenience, instant gratification and avoid shipping costs. Retailers reduce operational costs, and it gives them the opportunity to bring customers back to physical stores for additional purchase opportunities.” There has been a lot of traction in this space and more than 90% of the retailers plan to implement BOPS by 2021. But one must question, whether this strategy really works? In order to answer we conducted below analysis to extract the truth based on the available data. 
  <br>
-<b>Business objective of the analysis: <b><br>
+<b>Business objective of the analysis: 
  To evaluate <br>
 1. What is the impact of implementing BOPS strategy on online channel sales?  
 2. What is the impact of implementing BOPS strategy on online channel returns? 
+ </b>
  
  <b><br>
 About available data:</b><br>
