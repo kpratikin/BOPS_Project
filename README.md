@@ -6,9 +6,9 @@ In the era of digital economy, traditional retailers are adopting innovative str
 Online-offline integrations can be achieved in different ways. One such strategy that is popular among retailers is the option to buy products online and pick them up in store (BOPS) strategy. In this strategy, the retailer shows online viewers the locations at which the items are available and gives customers the option to close the transaction online and then pick up the products at one of the retailer’s locations shortly after closing the purchase.
 
 BOPS provides tangible benefits to both consumers and retailers, as per eMarketer's website "with BOPS, Consumers get convenience, instant gratification and avoid shipping costs. Retailers reduce operational costs, and it gives them the opportunity to bring customers back to physical stores for additional purchase opportunities.” There has been a lot of traction in this space and more than 90% of the retailers plan to implement BOPS by 2021. But one must question, whether this strategy really works? In order to answer we conducted below analysis to extract the truth based on the available data. 
- <br>
+ <br><br>
 <b>Business objective of the analysis: 
- To evaluate <br>
+<br>To evaluate <br>
 1. What is the impact of implementing BOPS strategy on online channel sales?  
 2. What is the impact of implementing BOPS strategy on online channel returns? 
  </b>
