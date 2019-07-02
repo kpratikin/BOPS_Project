@@ -17,9 +17,10 @@ BOPS provides tangible benefits to both consumers and retailers, as per eMarkete
 About available data:</b><br>
 The data is from national jewelry retailer (In order to maintain confidentiality, the name of the company is not disclosed). The data covers all online transactions made between August 1st, 2010 and July 31st, 2013. 
 
-
+<p align="center">
 ![Image of Data Timeline](https://github.com/kpratikin/BOPS_Project/blob/master/Data%20availiability%20and%20timeline.PNG)
  <br>Figure: Data Timeline
+ </p>
  
  There are three online channels. Store number for these channels are 2, 6, and 5998. 
  <ul><li>Online channels 2 and 6 started the BOPS strategy on August 1st, 2011.</li> 
@@ -45,7 +46,7 @@ Figure - Difference in Difference approach to capture 'Impact of BOPS on sales'
 Figure above, indicates how we captured the impact of BOPS keeping every other factors as constant. If the control and treatment groups does not change their slopes (from pre-implementation (Time Dummy=0) to post-implementation (Time Dummy=1) i.e. they slopes are parallel), then it indicates that there is no impact of BOPS on sales/returns. However, if we observe change in slope between pre-implementation (Time Dummy=0) to post-implementation (Time Dummy=1) period (i.e. for stores, where BOPS implemented we observed slope change as compared to store where BOPS are not implemented) then this change is because of BOPS strategy.
 
 <br><b>Analysis:</b>
-Refer code
+Refer code - https://github.com/kpratikin/BOPS_Project/blob/master/BOPS.rmd
 
 <br><b>Conclusion & Suggestions:</b><br>
 Our analysis of the impact of BOPS strategy on online sales and returns shows that online sales and returns do not increase with the implementation of this strategy. It rather decreases. 
